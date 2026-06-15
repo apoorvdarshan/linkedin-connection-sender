@@ -1,4 +1,4 @@
-# LinkedIn Toolkit
+# LinkedIn Connection Sender
 
 Personal script to **send LinkedIn connection requests filtered by country**
 (and optionally role/keyword), at a slow, human-ish pace — run manually or on a

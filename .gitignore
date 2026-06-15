@@ -1,0 +1,31 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets / session data (never commit cookies or tokens)
+.env
+.env.*
+*.cookies
+*cookies*.json
+session.json
+li_at.txt
+
+# Generated personal data (invite log + any leftover lists)
+sent_invites.csv
+connections_raw.csv
+connections_by_country.csv
+country_breakdown.csv
+unfollowed.csv
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

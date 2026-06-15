@@ -18,29 +18,6 @@ signed-in Chrome session, no password required.
 
 ---
 
-## Two modes
-
-| Mode | Script | How it works | Detection risk |
-|---|---|---|---|
-| **Browser** (recommended) | `linkedin_connect_browser.py` | Drives a real Chrome via Playwright — log in once, session saved locally, later runs go new-headless and click like a human | **Lower** |
-| API (lightweight) | `linkedin_connect.py` | Calls LinkedIn's internal Voyager API directly with your Chrome cookies | Higher |
-
-> Neither bypasses LinkedIn's **server-side weekly invite cap (~100)** — that
-> applies no matter what. The browser mode just looks far more human.
-
-### Browser mode quickstart
-
-```bash
-./.venv/bin/pip install playwright
-./.venv/bin/python linkedin_connect_browser.py login   # one-time, VISIBLE window — sign in (2FA ok)
-./.venv/bin/python linkedin_connect_browser.py run     # DRY RUN, new-headless — lists who it WOULD connect
-LIVE=1 ./.venv/bin/python linkedin_connect_browser.py run   # actually connect, human-paced
-```
-- Login must be a **visible** window (you can't type credentials into a headless
-  one); every `run` after that is **new-headless** (`HEADFUL=1` to watch).
-- The session lives in an isolated profile at `~/.linkedin-connect-profile`
-  (separate from your main Chrome, never committed).
-
 ## Features
 
 - 🌍 **Target by country** — search people by LinkedIn geo region (US, India, UK,

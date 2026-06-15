@@ -1,9 +1,0 @@
-# Browser mode (recommended): linkedin_connect_browser.py
-playwright
-
-# API mode (lightweight alternative): linkedin_connect.py
-linkedin-api
-browser-cookie3
-
-# After installing, for browser mode also run once:
-#   playwright install chromium      # only if channel="chrome" can't find Chrome

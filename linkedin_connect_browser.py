@@ -195,15 +195,18 @@ def cmd_run(live):
             sys.exit("Not logged in. Run the 'login' command first (visible window).")
 
         print(f"Searching: '{KEYWORDS}' in {TARGET_COUNTRY} (2nd/3rd degree)...")
-        page.goto(search_url(TARGET_COUNTRY, KEYWORDS), wait_until="domcontentloaded")
-        time.sleep(random.uniform(3, 5))
+        base_url = search_url(TARGET_COUNTRY, KEYWORDS)
 
         count = 0
         pages_seen = 0
         seen_run = set()
         stop = False
-        while count < per_run and pages_seen < 10 and not stop:
+        while count < per_run and pages_seen < 12 and not stop:
             pages_seen += 1
+            # Paginate by URL (&page=N) -- robust, unlike clicking "Next".
+            page.goto(base_url + f"&page={pages_seen}",
+                      wait_until="domcontentloaded")
+            time.sleep(random.uniform(3, 5))
             wiggle_mouse(page)
             human_scroll(page)
 
@@ -291,14 +294,11 @@ def cmd_run(live):
                     except Exception:
                         pass
 
-            # next page
-            if count < per_run and not stop:
-                nxt = page.locator("button[aria-label='Next']")
-                if nxt.count() > 0 and nxt.first.is_enabled():
-                    nxt.first.click()
-                    time.sleep(random.uniform(3, 6))
-                else:
-                    break
+            # End of results? A page with no Invite AND no Pending = no people
+            # left, so stop paging (otherwise the next URL goes by &page=N).
+            if (page.locator("[aria-label^='Invite'][aria-label*='to connect']").count() == 0
+                    and page.locator("[aria-label*='Pending']").count() == 0):
+                break
 
         ctx.close()
     print(f"\nDone. {'Sent' if live else 'Would send (dry)'} {count} this run. "

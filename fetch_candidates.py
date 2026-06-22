@@ -53,14 +53,20 @@ def isolated_cookies():
         ctx = p.chromium.launch_persistent_context(
             PROFILE, channel="chrome", headless=True,
             args=["--disable-blink-features=AutomationControlled"])
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
+        time.sleep(2)                       # JSESSIONID is only set after a load
         cookies = ctx.cookies()
         ctx.close()
     d = {c["name"]: c["value"] for c in cookies}
     if "li_at" not in d:
         sys.exit("No li_at in the isolated session. Run the browser 'login' first.")
+    js = d.get("JSESSIONID") or '"ajax:0000000000000000000"'
+    if not js.startswith('"'):
+        js = f'"{js}"'                      # linkedin-api expects the quotes
     jar = RequestsCookieJar()
     jar.set("li_at", d["li_at"], domain=".linkedin.com")
-    jar.set("JSESSIONID", d.get("JSESSIONID", ""), domain=".linkedin.com")
+    jar.set("JSESSIONID", js, domain=".linkedin.com")
     return jar
 
 

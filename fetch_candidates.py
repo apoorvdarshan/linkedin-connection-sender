@@ -13,6 +13,7 @@ engineer / full-stack / web / app roles.
 
   ./.venv/bin/python fetch_candidates.py
 """
+import os
 import csv
 import sys
 import time

@@ -47,7 +47,7 @@ except ImportError:
 # CONFIG -- tune these
 # ----------------------------------------------------------------------------
 TARGET_COUNTRY = "United States"
-KEYWORDS       = "software engineer"
+KEYWORDS       = os.environ.get("KW", "software engineer")   # override per run
 PER_RUN_LIMIT  = 15                 # invites per run -- keep low (weekly cap ~100)
 MIN_DELAY_SEC  = 30.0               # human gap between Connect clicks
 MAX_DELAY_SEC  = 90.0
@@ -186,6 +186,16 @@ def cmd_run(live):
     per_run = int(os.environ.get("LIMIT", PER_RUN_LIMIT))
     sent = load_sent()
 
+    # LIST mode: only invite people whose name is in this CSV (your reviewed
+    # candidates), instead of everyone in the search results.
+    targets = None
+    _lp = os.environ.get("LIST")
+    if _lp and os.path.exists(_lp):
+        import csv as _csv
+        with open(_lp) as _f:
+            targets = {r["name"].strip() for r in _csv.DictReader(_f) if r.get("name")}
+        print(f"LIST mode: restricting to {len(targets)} reviewed candidates")
+
     with sync_playwright() as p:
         ctx = launch(p, headless=headless)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
@@ -224,7 +234,8 @@ def cmd_run(live):
                     if nm:
                         names.append(nm)
                 name = next((nm for nm in names if nm not in sent
-                             and nm not in seen_run and nm not in tried_here), None)
+                             and nm not in seen_run and nm not in tried_here
+                             and (targets is None or nm in targets)), None)
                 if name is None:
                     break                          # nobody new left on this page
                 tried_here.add(name)

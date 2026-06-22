@@ -197,6 +197,7 @@ def cmd_run(live):
 
         count = 0
         pages_seen = 0
+        seen_run = set()
         while count < per_run and pages_seen < 10:
             pages_seen += 1
             wiggle_mouse(page)
@@ -218,12 +219,12 @@ def cmd_run(live):
                     name = label.replace("Invite", "").replace("to connect", "").strip()
                 except Exception:
                     name = f"candidate#{i}"
-                if name in sent:
+                if name in sent or name in seen_run:
                     continue
+                seen_run.add(name)             # in-memory dedup, non-destructive
 
                 if not live:
                     print(f"  [DRY] would connect: {name}")
-                    mark_sent(name, "dry")     # so dry runs don't repeat names
                     count += 1
                     continue
 

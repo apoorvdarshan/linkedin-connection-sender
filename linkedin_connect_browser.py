@@ -201,41 +201,43 @@ def cmd_run(live):
         count = 0
         pages_seen = 0
         seen_run = set()
-        while count < per_run and pages_seen < 10:
+        stop = False
+        while count < per_run and pages_seen < 10 and not stop:
             pages_seen += 1
             wiggle_mouse(page)
             human_scroll(page)
 
-            # "Connect" controls are <a> (not <button>) with aria-label
-            # "Invite <Name> to connect" in LinkedIn's current UI.
-            buttons = page.locator("[aria-label^='Invite'][aria-label*='to connect']")
-            n = buttons.count()
-            if n == 0:
-                print("  no Connect buttons on this page (everyone may be "
-                      "pending/connected, or selectors changed).")
-
-            for i in range(n):
-                if count >= per_run:
-                    break
-                btn = buttons.nth(i)
-                try:
-                    label = btn.get_attribute("aria-label") or "Invite to connect"
-                    name = label.replace("Invite", "").replace("to connect", "").strip()
-                except Exception:
-                    name = f"candidate#{i}"
-                if name in sent or name in seen_run:
-                    continue
-                seen_run.add(name)             # in-memory dedup, non-destructive
+            # Process this page by RE-QUERYING fresh each iteration. After a send
+            # the DOM updates and old element handles go stale (the cause of the
+            # timeouts), so we re-find the exact person by aria-label every time
+            # and never touch a shifted/detached element.
+            tried_here = set()
+            while count < per_run:
+                labels = page.locator("[aria-label^='Invite'][aria-label*='to connect']")
+                names = []
+                for i in range(labels.count()):
+                    al = labels.nth(i).get_attribute("aria-label") or ""
+                    nm = al.replace("Invite", "").replace("to connect", "").strip()
+                    if nm:
+                        names.append(nm)
+                name = next((nm for nm in names if nm not in sent
+                             and nm not in seen_run and nm not in tried_here), None)
+                if name is None:
+                    break                          # nobody new left on this page
+                tried_here.add(name)
 
                 if not live:
+                    seen_run.add(name)
                     print(f"  [DRY] would connect: {name}")
                     count += 1
                     continue
 
+                # fresh locator for THIS exact person (robust to DOM shifts)
+                btn = page.locator(f'[aria-label="Invite {name} to connect"]').first
                 try:
                     btn.scroll_into_view_if_needed()
                     wiggle_mouse(page)
-                    btn.click()
+                    btn.click(timeout=8000)
                     time.sleep(random.uniform(1.2, 2.5))
                     # Click a REAL Send button in the modal (tag-agnostic).
                     sent_ok = False
@@ -246,11 +248,12 @@ def cmd_run(live):
                                 "button:has-text('Send')"):
                         m = page.locator(sel)
                         if m.count() > 0:
-                            m.first.click()
+                            m.first.click(timeout=6000)
                             sent_ok = True
                             break
 
                     if sent_ok:
+                        seen_run.add(name)
                         mark_sent(name, "sent")     # only counted if Send clicked
                         count += 1
                         print(f"  [{count}/{per_run}] connected: {name}")
@@ -269,23 +272,33 @@ def cmd_run(live):
                             print(f"\nSTOP: LinkedIn restriction/limit hit (no Send "
                                   f"dialog for {name}). Account is capped/restricted.")
                             page.keyboard.press("Escape")
+                            stop = True
                             break
                         print(f"  skip {name}: no Send dialog "
                               f"(Connect may be under the '...' menu)")
                         page.keyboard.press("Escape")
-                        time.sleep(random.uniform(1.5, 3.0))
+                        time.sleep(random.uniform(0.8, 1.6))
                 except PWTimeout:
                     print(f"  timeout on {name} -- skipping")
+                    try:
+                        page.keyboard.press("Escape")
+                    except Exception:
+                        pass
                 except Exception as e:
                     print(f"  couldn't connect {name}: {e}")
+                    try:
+                        page.keyboard.press("Escape")
+                    except Exception:
+                        pass
 
             # next page
-            nxt = page.locator("button[aria-label='Next']")
-            if count < per_run and nxt.count() > 0 and nxt.first.is_enabled():
-                nxt.first.click()
-                time.sleep(random.uniform(3, 6))
-            else:
-                break
+            if count < per_run and not stop:
+                nxt = page.locator("button[aria-label='Next']")
+                if nxt.count() > 0 and nxt.first.is_enabled():
+                    nxt.first.click()
+                    time.sleep(random.uniform(3, 6))
+                else:
+                    break
 
         ctx.close()
     print(f"\nDone. {'Sent' if live else 'Would send (dry)'} {count} this run. "

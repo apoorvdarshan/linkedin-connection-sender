@@ -138,22 +138,33 @@ def logged_in(page):
 
 # ----------------------------------------------------------------------------
 def cmd_login():
-    """Open a VISIBLE window, let the user sign in, persist the session."""
-    print("Opening Chrome -- sign in to LinkedIn (do 2FA if asked).")
+    """Open a VISIBLE window, wait for sign-in, persist the isolated session."""
+    print("Opening a Chrome window -- sign in to LinkedIn there (2FA is fine).")
+    print(f"This is a SEPARATE session from your normal Chrome ({PROFILE_DIR}).")
     with sync_playwright() as p:
         ctx = launch(p, headless=False)        # MUST be visible to log in
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto("https://www.linkedin.com/login")
-        input("\n>>> After you're fully logged in (you can see your feed), "
-              "come back here and press ENTER to save the session... ")
-        ok = logged_in(page)
+        print("Waiting for you to finish signing in (up to 5 minutes)...",
+              flush=True)
+        ok = False
+        for _ in range(150):                   # 150 x 2s = 5 min
+            time.sleep(2)
+            try:
+                names = {c["name"] for c in ctx.cookies()}
+            except Exception:
+                names = set()
+            if "li_at" in names:               # li_at = the logged-in token
+                ok = True
+                break
+        time.sleep(2)                          # settle so cookies flush to disk
         ctx.close()
     if ok:
-        print(f"\n✓ Session saved to {PROFILE_DIR}. You can now run:  "
+        print(f"\n✓ Session saved to {PROFILE_DIR}. Now run:  "
               f"./.venv/bin/python {os.path.basename(__file__)} run")
     else:
-        print("\n✗ Didn't detect a logged-in session. Re-run 'login' and make "
-              "sure you reach the feed before pressing ENTER.")
+        print("\n✗ No login detected within 5 min. Re-run 'login' and finish "
+              "signing in before it times out.")
 
 
 def search_url(country, keywords):

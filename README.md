@@ -9,8 +9,9 @@ role/keyword), at a slow, human-like pace. Run it manually or on a weekly
 schedule to grow your network in a target geography — using your already
 signed-in Chrome session, no password required.
 
-> ⚠️ **Disclaimer — read before using.** This uses LinkedIn's *internal*
-> (unofficial) "Voyager" API, which **violates the LinkedIn User Agreement**.
+> ⚠️ **Disclaimer — read before using.** This automates LinkedIn — via
+> real-browser UI clicks (recommended) or its internal "Voyager" API — which
+> **violates the LinkedIn User Agreement**.
 > Invites are the single most-policed action to automate: LinkedIn enforces a
 > **weekly invite cap (~100–200, often ~100)**, and too many "I don't know this
 > person" ignores can get your account **restricted from sending invites**. Keep
@@ -55,13 +56,32 @@ LIVE=1 ./.venv/bin/python linkedin_connect_browser.py run   # actually connect, 
   and **stops cleanly** when LinkedIn signals the weekly cap.
 - 🔐 **No password** — reads your existing Chrome session (works with 2FA).
 
-## How it works
+## How it works (architecture)
 
-1. Reads `li_at` + `JSESSIONID` from your signed-in Chrome (or env vars).
-2. Searches People by **geo region + keyword**, restricted to **2nd/3rd-degree**
-   (people you're not already connected to).
-3. Sends **note-less** invites via the Voyager `verifyQuotaAndCreateV2`
-   endpoint, reading the real result (sent / already-pending / weekly-limit).
+The recommended **browser mode** runs as a **3-stage pipeline** on a saved,
+**isolated** session — kept completely separate from your everyday Chrome:
+
+**1. Session (one-time)** — `login` opens a real Chrome window; you sign in once
+(2FA fine). The session is saved to an isolated profile
+(`~/.linkedin-connect-profile`) and **reused on every later run**. Because it's
+isolated, if LinkedIn ever flags the automation, **only this throwaway session
+is affected — your main Chrome stays logged in.**
+
+**2. Fetch / find** — searches LinkedIn People by **country (geo) + keyword**,
+restricted to **2nd/3rd-degree**, and collects the **invitable** candidates
+(cards showing a "Connect" action — never existing connections, never
+already-pending).
+
+**3. Send (UI automation)** — for each candidate the **new-headless** browser
+clicks **"Connect" → "Send"** like a human, with randomized gaps, and **stops
+the moment** LinkedIn shows a weekly-limit / restriction dialog. An invite is
+only counted as sent if the Send button was actually clicked.
+
+> **Why split it this way:** finding is cheap and low-risk, so it's just a
+> search; **sending is the policed action, so it's done with real UI clicks** —
+> far harder for LinkedIn to detect than raw API requests (which is exactly why
+> the lightweight API mode gets flagged faster). Tune the gap with
+> `GAP_MIN` / `GAP_MAX` env vars.
 
 ## Setup
 

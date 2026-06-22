@@ -416,6 +416,123 @@ def cmd_sendlist(live):
     print(f"\nsendlist done. Sent {count}.")
 
 
+_SEND_SELECTORS = ("[aria-label='Send without a note']",
+                   "button:has-text('Send without a note')",
+                   "[aria-label='Send now']", "[aria-label='Send']",
+                   "button:has-text('Send')")
+_RESTRICT = ("weekly invitation limit", "you've reached", "reached the",
+             "restricted", "try again")
+
+
+def cmd_profilesend(live):
+    """Last-mile: invite remaining LIST candidates via their PROFILE page,
+    resolving urn_id -> public_id and clicking Connect even when it's under the
+    '...' More menu (reaches people who don't surface in search)."""
+    headless = os.environ.get("HEADFUL") != "1"
+    per_run = int(os.environ.get("LIMIT", 60))
+    list_path = os.environ.get("LIST", "candidates.csv")
+    sent = load_sent()
+    sent_keys = {norm_name(x) for x in sent}
+    import csv as _csv
+    from requests.cookies import RequestsCookieJar
+    from linkedin_api import Linkedin
+    targets = []
+    with open(list_path) as f:
+        for r in _csv.DictReader(f):
+            nm = (r.get("name") or "").strip()
+            urn = (r.get("urn_id") or "").strip()
+            if nm and urn and nm not in sent and norm_name(nm) not in sent_keys:
+                targets.append((nm, urn))
+    print(f"profilesend: {len(targets)} remaining via profile page")
+
+    with sync_playwright() as p:
+        ctx = launch(p, headless=headless)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        if not logged_in(page):
+            ctx.close()
+            sys.exit("Not logged in. Run 'login' first.")
+        cks = {c["name"]: c["value"] for c in ctx.cookies()}
+        js = cks.get("JSESSIONID") or '"ajax:0000000000000000000"'
+        if not js.startswith('"'):
+            js = f'"{js}"'
+        jar = RequestsCookieJar()
+        jar.set("li_at", cks.get("li_at"), domain=".linkedin.com")
+        jar.set("JSESSIONID", js, domain=".linkedin.com")
+        api = Linkedin("", "", cookies=jar)
+
+        count = 0
+        for nm, urn in targets:
+            if count >= per_run:
+                break
+            try:
+                pub = (api.get_profile(urn_id=urn) or {}).get("public_id")
+            except Exception as e:
+                print(f"  - {nm}: profile lookup failed ({e})")
+                continue
+            if not pub:
+                print(f"  - {nm}: no public_id")
+                continue
+            page.goto(f"https://www.linkedin.com/in/{pub}/",
+                      wait_until="domcontentloaded")
+            time.sleep(random.uniform(2.5, 4))
+            wiggle_mouse(page)
+            if not live:
+                print(f"  [DRY] would connect: {nm} ({pub})")
+                count += 1
+                continue
+            try:
+                opened = False
+                top = page.locator("button:has-text('Connect'), "
+                                   "[aria-label*='to connect']")
+                if top.count() > 0 and top.first.is_visible():
+                    top.first.click(timeout=6000)
+                    opened = True
+                else:
+                    more = page.locator("button[aria-label='More actions'], "
+                                        "button:has-text('More')")
+                    if more.count() > 0:
+                        more.first.click(timeout=6000)
+                        time.sleep(1)
+                        mc = page.locator("div[role='button']:has-text('Connect'), "
+                                          "[aria-label*='to connect']")
+                        if mc.count() > 0:
+                            mc.first.click(timeout=6000)
+                            opened = True
+                if not opened:
+                    print(f"  - {nm}: no Connect (pending/already connected?)")
+                    continue
+                time.sleep(random.uniform(1.2, 2.5))
+                ok = False
+                for sel in _SEND_SELECTORS:
+                    m = page.locator(sel)
+                    if m.count() > 0:
+                        m.first.click(timeout=6000)
+                        ok = True
+                        break
+                if ok:
+                    mark_sent(nm, "sent")
+                    count += 1
+                    print(f"  [{count}] connected: {nm}")
+                    page.keyboard.press("Escape")
+                    jitter()
+                else:
+                    body = (page.inner_text("body") or "").lower()
+                    if any(k in body for k in _RESTRICT):
+                        print(f"\nSTOP: restriction hit at {nm}.")
+                        page.keyboard.press("Escape")
+                        break
+                    print(f"  skip {nm}: no Send dialog")
+                    page.keyboard.press("Escape")
+            except Exception as e:
+                print(f"  err {nm}: {e}")
+                try:
+                    page.keyboard.press("Escape")
+                except Exception:
+                    pass
+        ctx.close()
+    print(f"\nprofilesend done. Sent {count}.")
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "login":
@@ -424,9 +541,12 @@ def main():
         cmd_run(live=os.environ.get("LIVE") == "1")
     elif cmd == "sendlist":
         cmd_sendlist(live=os.environ.get("LIVE") == "1")
+    elif cmd == "profilesend":
+        cmd_profilesend(live=os.environ.get("LIVE") == "1")
     else:
         print(__doc__)
-        sys.exit("Usage: linkedin_connect_browser.py [login|run|sendlist]   "
+        sys.exit("Usage: linkedin_connect_browser.py "
+                 "[login|run|sendlist|profilesend]   "
                  "(LIVE=1 to actually send; HEADFUL=1 to watch)")
 
 

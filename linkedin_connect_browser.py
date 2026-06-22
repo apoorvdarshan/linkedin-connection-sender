@@ -79,7 +79,10 @@ window.chrome = window.chrome || { runtime: {} };
 
 
 # ----------------------------------------------------------------------------
-def jitter(a=MIN_DELAY_SEC, b=MAX_DELAY_SEC):
+def jitter(a=None, b=None):
+    # gap between invites; override with GAP_MIN / GAP_MAX env vars
+    a = float(os.environ.get("GAP_MIN", MIN_DELAY_SEC)) if a is None else a
+    b = float(os.environ.get("GAP_MAX", MAX_DELAY_SEC)) if b is None else b
     time.sleep(random.uniform(a, b))
 
 
@@ -233,9 +236,9 @@ def cmd_run(live):
                     btn.scroll_into_view_if_needed()
                     wiggle_mouse(page)
                     btn.click()
-                    time.sleep(random.uniform(1.5, 3.0))
-                    # modal: prefer note-less "Send without a note", else "Send"
-                    # (tag-agnostic — these may be <a> or <button>)
+                    time.sleep(random.uniform(1.2, 2.5))
+                    # Click a REAL Send button in the modal (tag-agnostic).
+                    sent_ok = False
                     for sel in ("[aria-label='Send without a note']",
                                 "button:has-text('Send without a note')",
                                 "[aria-label='Send now']",
@@ -244,13 +247,33 @@ def cmd_run(live):
                         m = page.locator(sel)
                         if m.count() > 0:
                             m.first.click()
+                            sent_ok = True
                             break
-                    mark_sent(name, "sent")
-                    count += 1
-                    print(f"  [{count}/{per_run}] connected: {name}")
-                    # dismiss any leftover modal, then human pause
-                    page.keyboard.press("Escape")
-                    jitter()
+
+                    if sent_ok:
+                        mark_sent(name, "sent")     # only counted if Send clicked
+                        count += 1
+                        print(f"  [{count}/{per_run}] connected: {name}")
+                        page.keyboard.press("Escape")
+                        jitter()
+                    else:
+                        # No Send dialog -> restriction/limit, or Connect-under-'...'
+                        body = ""
+                        try:
+                            body = (page.inner_text("body") or "").lower()
+                        except Exception:
+                            pass
+                        if any(k in body for k in ("weekly invitation limit",
+                                "you've reached", "reached the", "restricted",
+                                "try again")):
+                            print(f"\nSTOP: LinkedIn restriction/limit hit (no Send "
+                                  f"dialog for {name}). Account is capped/restricted.")
+                            page.keyboard.press("Escape")
+                            break
+                        print(f"  skip {name}: no Send dialog "
+                              f"(Connect may be under the '...' menu)")
+                        page.keyboard.press("Escape")
+                        time.sleep(random.uniform(1.5, 3.0))
                 except PWTimeout:
                     print(f"  timeout on {name} -- skipping")
                 except Exception as e:

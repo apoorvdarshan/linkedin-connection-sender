@@ -86,6 +86,14 @@ def jitter(a=None, b=None):
     time.sleep(random.uniform(a, b))
 
 
+def norm_name(s):
+    """Normalized key (lowercase, letters only, first 2 tokens) for fuzzy match
+    across name variants like 'Jeremy Sanders (He/Him)' vs 'Jeremy Sanders'."""
+    import re
+    s = re.sub(r"[^a-z ]", "", (s or "").lower())
+    return " ".join(s.split()[:2])
+
+
 def human_scroll(page, steps=None):
     """Scroll down in a few irregular chunks, like a person skimming."""
     for _ in range(steps or random.randint(3, 6)):
@@ -316,15 +324,109 @@ def cmd_run(live):
           f"Logged to {SENT_FILE}.")
 
 
+def cmd_sendlist(live):
+    """Invite the remaining people in LIST (default candidates.csv) by searching
+    each one BY NAME -- reaches candidates that didn't surface in keyword search.
+    Fuzzy name match handles 'He/Him' tags, credentials, emoji, etc."""
+    headless = os.environ.get("HEADFUL") != "1"
+    per_run = int(os.environ.get("LIMIT", 60))
+    list_path = os.environ.get("LIST", "candidates.csv")
+
+    sent = load_sent()
+    sent_keys = {norm_name(x) for x in sent}
+    import csv as _csv
+    targets = []
+    with open(list_path) as f:
+        for r in _csv.DictReader(f):
+            nm = (r.get("name") or "").strip()
+            if nm and nm not in sent and norm_name(nm) not in sent_keys:
+                targets.append(nm)
+    print(f"sendlist: {len(targets)} remaining to invite by name-search")
+
+    with sync_playwright() as p:
+        ctx = launch(p, headless=headless)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        if not logged_in(page):
+            ctx.close()
+            sys.exit("Not logged in. Run 'login' first.")
+
+        count = 0
+        for tname in targets:
+            if count >= per_run:
+                break
+            page.goto("https://www.linkedin.com/search/results/people/?keywords="
+                      + quote(tname), wait_until="domcontentloaded")
+            time.sleep(random.uniform(2.5, 4))
+            human_scroll(page, steps=2)
+            tkey = norm_name(tname)
+            labels = page.locator("[aria-label^='Invite'][aria-label*='to connect']")
+            picked = None
+            for i in range(labels.count()):
+                al = labels.nth(i).get_attribute("aria-label") or ""
+                nm = al.replace("Invite", "").replace("to connect", "").strip()
+                if norm_name(nm) == tkey:
+                    picked = nm
+                    break
+            if not picked:
+                print(f"  - not found/invitable: {tname}")
+                continue
+            if not live:
+                print(f"  [DRY] would connect: {picked}")
+                count += 1
+                continue
+            try:
+                btn = page.locator(f'[aria-label="Invite {picked} to connect"]').first
+                btn.scroll_into_view_if_needed()
+                wiggle_mouse(page)
+                btn.click(timeout=8000)
+                time.sleep(random.uniform(1.2, 2.5))
+                ok = False
+                for sel in ("[aria-label='Send without a note']",
+                            "button:has-text('Send without a note')",
+                            "[aria-label='Send now']", "[aria-label='Send']",
+                            "button:has-text('Send')"):
+                    m = page.locator(sel)
+                    if m.count() > 0:
+                        m.first.click(timeout=6000)
+                        ok = True
+                        break
+                if ok:
+                    mark_sent(picked, "sent")
+                    count += 1
+                    print(f"  [{count}] connected: {picked}")
+                    page.keyboard.press("Escape")
+                    jitter()
+                else:
+                    body = (page.inner_text("body") or "").lower()
+                    if any(k in body for k in ("weekly invitation limit",
+                            "you've reached", "reached the", "restricted",
+                            "try again")):
+                        print(f"\nSTOP: restriction hit at {picked}.")
+                        page.keyboard.press("Escape")
+                        break
+                    print(f"  skip {picked}: no Send dialog")
+                    page.keyboard.press("Escape")
+            except Exception as e:
+                print(f"  err {picked}: {e}")
+                try:
+                    page.keyboard.press("Escape")
+                except Exception:
+                    pass
+        ctx.close()
+    print(f"\nsendlist done. Sent {count}.")
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "login":
         cmd_login()
     elif cmd == "run":
         cmd_run(live=os.environ.get("LIVE") == "1")
+    elif cmd == "sendlist":
+        cmd_sendlist(live=os.environ.get("LIVE") == "1")
     else:
         print(__doc__)
-        sys.exit("Usage: linkedin_connect_browser.py [login|run]   "
+        sys.exit("Usage: linkedin_connect_browser.py [login|run|sendlist]   "
                  "(LIVE=1 to actually send; HEADFUL=1 to watch)")
 
 

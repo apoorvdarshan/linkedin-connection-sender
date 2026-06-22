@@ -203,8 +203,9 @@ def cmd_run(live):
             wiggle_mouse(page)
             human_scroll(page)
 
-            # "Connect" buttons on result cards carry aria-label "Invite X to connect"
-            buttons = page.locator("button[aria-label^='Invite']")
+            # "Connect" controls are <a> (not <button>) with aria-label
+            # "Invite <Name> to connect" in LinkedIn's current UI.
+            buttons = page.locator("[aria-label^='Invite'][aria-label*='to connect']")
             n = buttons.count()
             if n == 0:
                 print("  no Connect buttons on this page (everyone may be "
@@ -234,9 +235,11 @@ def cmd_run(live):
                     btn.click()
                     time.sleep(random.uniform(1.5, 3.0))
                     # modal: prefer note-less "Send without a note", else "Send"
-                    for sel in ("button[aria-label='Send without a note']",
+                    # (tag-agnostic — these may be <a> or <button>)
+                    for sel in ("[aria-label='Send without a note']",
                                 "button:has-text('Send without a note')",
-                                "button[aria-label='Send now']",
+                                "[aria-label='Send now']",
+                                "[aria-label='Send']",
                                 "button:has-text('Send')"):
                         m = page.locator(sel)
                         if m.count() > 0:

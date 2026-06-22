@@ -19,7 +19,7 @@ li_at.txt
 
 # Generated personal data (invite log + any leftover lists)
 sent_invites.csv
-candidates.csv
+candidates*.csv
 connections_raw.csv
 connections_by_country.csv
 country_breakdown.csv

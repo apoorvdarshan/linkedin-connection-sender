@@ -25,12 +25,17 @@ from playwright.sync_api import sync_playwright
 
 PROFILE = "/Users/ApoorvDarshan/.linkedin-connect-profile"
 US_GEO  = "103644278"
-TARGET  = 210
-OUT     = "candidates.csv"
+TARGET  = int(os.environ.get("TARGET", "210"))   # how many NEW candidates to find
+OUT     = os.environ.get("OUT", "candidates.csv")
+SKIP_SENT = "sent_invites.csv"                    # exclude anyone already invited
 
-# Priority order (HR first = "especially", then founders/CEOs, then engineers).
-# Per-category caps keep the mix weighted the way you asked.
-CATEGORY_CAP = {"hr/recruiter": 90, "founder/ceo": 80, "engineer": 70}
+# Priority order (HR first, then founders/CEOs, then engineers). Per-category
+# caps (scaled to TARGET) keep a balanced mix.
+import math as _math
+_c = _math.ceil
+CATEGORY_CAP = {"hr/recruiter": _c(TARGET * 0.4),
+                "founder/ceo":  _c(TARGET * 0.4),
+                "engineer":     _c(TARGET * 0.35)}
 KEYWORDS = [
     ("hr/recruiter", "technical recruiter"),
     ("hr/recruiter", "talent acquisition"),
@@ -70,10 +75,29 @@ def isolated_cookies():
     return jar
 
 
+def _norm(s):
+    import re
+    s = re.sub(r"[^a-z ]", "", (s or "").lower())
+    return " ".join(s.split()[:2])
+
+
+def _already_sent_keys():
+    """Normalized names of everyone already invited (so we never re-list them)."""
+    keys = set()
+    if os.path.exists(SKIP_SENT):
+        for r in csv.reader(open(SKIP_SENT)):
+            if r:
+                nm = r[1] if len(r) >= 3 else r[0]   # mixed 2-/3-col format
+                keys.add(_norm(nm))
+    return keys
+
+
 def main():
     api = Linkedin("", "", cookies=isolated_cookies())
     found = {}                          # urn_id -> row
     cat_count = Counter()
+    sent_keys = _already_sent_keys()
+    print(f"excluding {len(sent_keys)} already-invited people; target {TARGET}")
 
     for category, kw in KEYWORDS:
         if len(found) >= TARGET:
@@ -91,6 +115,8 @@ def main():
         for pp in people:
             urn = pp.get("urn_id")
             if not urn or urn in found:
+                continue
+            if _norm(pp.get("name", "")) in sent_keys:    # already invited
                 continue
             if cat_count[category] >= CATEGORY_CAP[category]:
                 break

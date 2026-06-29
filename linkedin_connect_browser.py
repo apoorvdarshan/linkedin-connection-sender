@@ -234,11 +234,18 @@ def cmd_run(live):
             # and never touch a shifted/detached element.
             tried_here = set()
             while count < per_run:
-                labels = page.locator("[aria-label^='Invite'][aria-label*='to connect']")
+                # Snapshot all Invite aria-labels in ONE atomic DOM read. Iterating
+                # locator.nth(i).get_attribute() does a round-trip per node, which
+                # times out the moment the DOM mutates after a send (stale handle).
+                try:
+                    als = page.eval_on_selector_all(
+                        "[aria-label^='Invite'][aria-label*='to connect']",
+                        "els => els.map(e => e.getAttribute('aria-label'))")
+                except Exception:
+                    als = []
                 names = []
-                for i in range(labels.count()):
-                    al = labels.nth(i).get_attribute("aria-label") or ""
-                    nm = al.replace("Invite", "").replace("to connect", "").strip()
+                for al in als:
+                    nm = (al or "").replace("Invite", "").replace("to connect", "").strip()
                     if nm:
                         names.append(nm)
                 name = next((nm for nm in names if nm not in sent
@@ -359,11 +366,15 @@ def cmd_sendlist(live):
             time.sleep(random.uniform(2.5, 4))
             human_scroll(page, steps=2)
             tkey = norm_name(tname)
-            labels = page.locator("[aria-label^='Invite'][aria-label*='to connect']")
+            try:
+                als = page.eval_on_selector_all(
+                    "[aria-label^='Invite'][aria-label*='to connect']",
+                    "els => els.map(e => e.getAttribute('aria-label'))")
+            except Exception:
+                als = []
             picked = None
-            for i in range(labels.count()):
-                al = labels.nth(i).get_attribute("aria-label") or ""
-                nm = al.replace("Invite", "").replace("to connect", "").strip()
+            for al in als:
+                nm = (al or "").replace("Invite", "").replace("to connect", "").strip()
                 if norm_name(nm) == tkey:
                     picked = nm
                     break
